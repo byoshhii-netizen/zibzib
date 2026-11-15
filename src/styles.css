@@ -77,9 +77,6 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 .auth-form .check-label input { width: 14px; height: 14px; margin: 0; accent-color: var(--teal); }
 .auth-divider { margin: 21px 0 13px; text-align: center; border-bottom: 1px solid #e9e9e2; line-height: .1em; }
 .auth-divider span { padding: 0 10px; color: #98998f; background: #fbfaf6; font-size: 11px; }
-.admin-entry { display: flex; align-items: center; gap: 7px; margin: 17px auto 0; padding: 5px; border: 0; color: #808177; background: transparent; font-size: 11px; }
-.admin-entry:hover { color: var(--teal); }
-.admin-hint { padding: 10px 12px; border-radius: 7px; color: #66695e; background: #f0f3eb; font-size: 11px; line-height: 1.5; }
 .legal-copy { margin: 18px 0 0; color: #9a9b91; font-size: 10px; line-height: 1.7; text-align: center; }
 .auth-error { margin: 12px 0 0; padding: 10px 12px; border: 1px solid #f0d7d0; border-radius: 7px; color: #9b4838; background: #fff3ef; font-size: 11px; }
 .legal-copy a, .form-bottom a { color: var(--teal); font-weight: 600; }

@@ -457,7 +457,6 @@ function Avatar({ contact, mini = false }: { contact: Contact; mini?: boolean })
 
 function Login({ notify }: { notify: (text: string) => void }) {
   const navigate = useNavigate();
-  const [admin, setAdmin] = useState(false);
   const [error, setError] = useState("");
   const [challenge, setChallenge] = useState<{ token: string; method: string; question: string | null } | null>(null);
   const [resetMode, setResetMode] = useState(false);
@@ -472,8 +471,7 @@ function Login({ notify }: { notify: (text: string) => void }) {
         setError("");
         try {
           const response = await fetch("/api/auth/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ username: values.get("username"), password: values.get("password") }) });
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || "Giriş yapılamadı.");
+          const data = await readApiResponse(response, "Giriş yapılamadı.");
           if (data.requiresTwoFactor) { setChallenge({ token: data.challenge, method: data.method, question: data.question }); return; }
           localStorage.setItem("zibzib-token", data.token);
           localStorage.setItem("zibzib-user", JSON.stringify(data.user));
@@ -488,8 +486,7 @@ function Login({ notify }: { notify: (text: string) => void }) {
             try {
               const answer = (document.getElementById("two-factor-answer") as HTMLInputElement).value;
               const response = await fetch("/api/auth/verify-2fa", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ challenge: challenge.token, answer }) });
-              const data = await response.json();
-              if (!response.ok) throw new Error(data.error || "Doğrulama başarısız.");
+              const data = await readApiResponse(response, "Doğrulama başarısız.");
               localStorage.setItem("zibzib-token", data.token); localStorage.setItem("zibzib-user", JSON.stringify(data.user));
               navigate(data.user.isAdmin ? "/yonetim" : "/mesajlar");
             } catch (reason) { setError(reason instanceof Error ? reason.message : "Doğrulama başarısız."); }
@@ -502,14 +499,12 @@ function Login({ notify }: { notify: (text: string) => void }) {
         const payload = resetSent ? { email: values.get("resetEmail"), code: values.get("resetCode"), password: values.get("resetPassword") } : { email: values.get("resetEmail") };
         try {
           const response = await fetch(`/api/auth/password-reset/${resetSent ? "finish" : "start"}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
-          const data = await response.json(); if (!response.ok) throw new Error(data.error || "İstek tamamlanamadı.");
+          const data = await readApiResponse(response, "İstek tamamlanamadı.");
           if (resetSent) { setResetMode(false); setResetSent(false); notify(data.message); } else { setResetSent(true); notify(data.message); }
         } catch (reason) { setResetError(reason instanceof Error ? reason.message : "İstek tamamlanamadı."); }
       }}><label>E-posta<input name="resetEmail" type="email" required /></label>{resetSent && <><label>6 haneli kod<input name="resetCode" inputMode="numeric" maxLength={6} required /></label><label>Yeni şifre<input name="resetPassword" type="password" minLength={8} required /></label></>}<button className="primary-button full-button" type="submit">{resetSent ? "Şifreyi yenile" : "Kod gönder"}</button></form>{resetError && <p className="auth-error">{resetError}</p>}<button className="text-button" onClick={() => { setResetMode(false); setResetSent(false); }}>Kapat</button></div>}
       <div className="auth-divider"><span>Hesabın yok mu?</span></div>
       <Link to="/kayit" className="secondary-button full-button">Yeni hesap oluştur</Link>
-      <button className="admin-entry" onClick={() => setAdmin((value) => !value)}><Shield size={15} /> Yönetici girişi</button>
-      {admin && <div className="admin-hint">Yönetici hesabı için kullanıcı adı ve parola ile giriş yapın. Girişten sonra yönetim paneli açılır.</div>}
       <p className="legal-copy">Devam ederek <a href="#">Kullanım Koşulları</a> ve <a href="#">Gizlilik İlkeleri</a>'ni kabul etmiş olursun.</p>
     </div>
   </AuthLayout>;
@@ -540,6 +535,20 @@ function Register() {
   </AuthLayout>;
 }
 
+async function readApiResponse(response: Response, fallback: string) {
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    if (!response.ok) {
+      throw new Error(`${fallback} Sunucu boş veya geçersiz yanıt döndürdü (HTTP ${response.status}). API sunucusunu ve veritabanı bağlantısını kontrol edin.`);
+    }
+    throw new Error(`${fallback} Sunucu geçersiz yanıt döndürdü.`);
+  }
+  if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : `${fallback} (HTTP ${response.status}).`);
+  return data;
+}
+
 async function uploadCroppedAvatar(file: File, horizontalPosition: number, token: string) {
   const image = await createImageBitmap(file);
   const size = Math.min(image.width, image.height);
@@ -555,8 +564,7 @@ async function uploadCroppedAvatar(file: File, horizontalPosition: number, token
   const body = new FormData();
   body.append("image", new File([blob], "profile.jpg", { type: "image/jpeg" }));
   const response = await fetch("/api/profile/avatar", { method: "POST", headers: { Authorization: `Bearer ${token}` }, body });
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Profil fotoğrafı yüklenemedi.");
+  const data = await readApiResponse(response, "Profil fotoğrafı yüklenemedi.");
   localStorage.setItem("zibzib-user", JSON.stringify({ ...JSON.parse(localStorage.getItem("zibzib-user") || "{}"), avatarUrl: data.avatarUrl }));
 }
 
@@ -578,8 +586,7 @@ function ProfileSetup({ notify }: { notify: (text: string) => void }) {
         setError("");
         try {
           const response = await fetch("/api/auth/register", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...registration, displayName: values.get("displayName"), username: values.get("username") }) });
-          const data = await response.json();
-          if (!response.ok) throw new Error(data.error || "Kayıt tamamlanamadı.");
+          const data = await readApiResponse(response, "Kayıt tamamlanamadı.");
           localStorage.setItem("zibzib-token", data.token);
           localStorage.setItem("zibzib-user", JSON.stringify(data.user));
           if (photo) {
@@ -640,9 +647,7 @@ function SettingsPage({ activeTab, setActiveTab, theme, setTheme, setChatTheme, 
   const authHeaders = { Authorization: `Bearer ${token}` };
   async function request(url: string, method = "GET", data?: unknown) {
     const response = await fetch(url, { method, headers: data === undefined ? authHeaders : { ...authHeaders, "Content-Type": "application/json" }, body: data === undefined ? undefined : JSON.stringify(data) });
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "İstek tamamlanamadı.");
-    return result;
+    return readApiResponse(response, "İstek tamamlanamadı.");
   }
   useEffect(() => {
     let active = true;
@@ -684,8 +689,7 @@ function SettingsPage({ activeTab, setActiveTab, theme, setTheme, setChatTheme, 
     const body = new FormData();
     body.append("image", file);
     const response = await fetch("/api/profile/avatar", { method: "POST", headers: authHeaders, body });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Fotoğraf yüklenemedi.");
+    const data = await readApiResponse(response, "Fotoğraf yüklenemedi.");
     setUser((current) => ({ ...current, avatarUrl: data.avatarUrl }));
     notify("Profil fotoğrafın güncellendi.");
   }
