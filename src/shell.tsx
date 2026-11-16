@@ -32,6 +32,9 @@ function AuthLayout({ children, eyebrow, title, caption }: { children: React.Rea
 
 function App({ page }: { page: Page }) {
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const currentUser = JSON.parse(localStorage.getItem("zibzib-user") || "{}");
+  const currentUserName = currentUser.displayName || "ZibZib kullanıcısı";
+  const currentUserInitials = currentUserName.split(/\s+/).slice(0, 2).map((part: string) => part[0]).join("").toLocaleUpperCase("tr");
   const [selected, setSelected] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [message, setMessage] = useState("");
@@ -40,6 +43,8 @@ function App({ page }: { page: Page }) {
   const [messageMenu, setMessageMenu] = useState<string | null>(null);
   const pointerStart = useRef<{ id: string; x: number } | null>(null);
   const holdTimer = useRef<number | null>(null);
+  const chatScroll = useRef<HTMLDivElement>(null);
+  const composerInput = useRef<HTMLTextAreaElement>(null);
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState("");
   const [optionContact, setOptionContact] = useState<Contact | undefined>();
@@ -162,8 +167,8 @@ function App({ page }: { page: Page }) {
       const { settings } = await response.json();
       if (!active) return;
       setDefaultAvatarUrl(settings.default_avatar_url || "");
-      document.documentElement.style.setProperty("--admin-light-bg", settings.light_background || "#e2ddbb");
-      document.documentElement.style.setProperty("--admin-dark-bg", settings.dark_background || "#000000");
+      document.documentElement.style.setProperty("--admin-light-bg", settings.light_background || "#f2f6f3");
+      document.documentElement.style.setProperty("--admin-dark-bg", settings.dark_background || "#101a17");
       document.documentElement.style.setProperty("--light-chat-image", settings.light_chat_background ? `url("${String(settings.light_chat_background).replace(/["\\]/g, "")}")` : "none");
       document.documentElement.style.setProperty("--dark-chat-image", settings.dark_chat_background ? `url("${String(settings.dark_chat_background).replace(/["\\]/g, "")}")` : "none");
     }).catch((reason: unknown) => notify(reason instanceof Error ? reason.message : "Görünüm ayarları yüklenemedi."));
@@ -301,6 +306,20 @@ function App({ page }: { page: Page }) {
     return () => { active = false; socket.disconnect(); };
   }, [activeId, lockToken]);
 
+  useEffect(() => {
+    const viewport = chatScroll.current;
+    if (!viewport || !activeId) return;
+    const frame = window.requestAnimationFrame(() => { viewport.scrollTop = viewport.scrollHeight; });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeId, messages.length]);
+
+  useEffect(() => {
+    const input = composerInput.current;
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 120)}px`;
+  }, [message]);
+
   if (page === "login") return <Login notify={notify} />;
   if (page === "register") return <Register />;
   if (page === "profile") return <ProfileSetup notify={notify} />;
@@ -327,13 +346,14 @@ function App({ page }: { page: Page }) {
         if (isEditing) {
           setMessages((current) => current.map((item) => item.id === data.message.id ? { ...item, text: data.message.body, edited: true } : item));
           setEditingMessage(null);
+          setMessage((current) => current === body ? "" : current);
         } else {
           setMessages((current) => current.some((item) => item.id === data.message.id) ? current : [...current, { id: data.message.id, author: "me", text: data.message.body, time: new Date(data.message.created_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }), replyTo: data.message.reply_to || undefined, read: false }]);
           setReplyTarget(null);
+          setMessage((current) => current === body ? "" : current);
           setContacts((current) => current.map((item) => item.id === activeId ? { ...item, text: body, time: new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }) } : item));
         }
       }).catch((reason: unknown) => notify(reason instanceof Error ? reason.message : "Mesaj gönderilemedi."));
-    setMessage("");
   }
   async function deleteMessage(item: ChatMessage, everyone: boolean) {
     if (!item.id) return;
@@ -369,7 +389,7 @@ function App({ page }: { page: Page }) {
       <button className="rail-button" title="Aramalar" onClick={() => setModal("Aramalar")}><Phone /></button>
       <div className="rail-spacer" />
       <button className="rail-button" title="Ayarlar" onClick={() => navigate("/ayarlar/profil")}><Settings /></button>
-      <button className="rail-avatar" title="Profil ayarları" onClick={() => navigate("/ayarlar/profil")}>KA</button>
+      <button className="rail-avatar" title="Profil ayarları" aria-label={`${currentUserName}, profil ayarları`} onClick={() => navigate("/ayarlar/profil")}>{currentUser.avatarUrl ? <img src={currentUser.avatarUrl} alt="" /> : currentUserInitials || "Z"}</button>
     </aside>
     <section className={`inbox ${showChat ? "inbox-mobile-hidden" : ""}`}>
       <header className="inbox-header">
@@ -399,13 +419,13 @@ function App({ page }: { page: Page }) {
         <div className="conversation-person"><strong>{activeContact.name}</strong><span>{activeContact.online ? <><i className="online-dot" /> çevrimiçi</> : activeContact.lastSeen ? `son görülme ${activeContact.lastSeen}` : activeContact.handle}</span></div>
         <div className="conversation-actions"><button className="icon-btn" title="Sesli ara" onClick={() => void startCall("audio")}><Phone /></button><button className="icon-btn" title="Görüntülü ara" onClick={() => void startCall("video")}><Video /></button><button className="icon-btn" title="Sohbet seçenekleri" onClick={() => { setOptionContact(activeContact); setModal("Sohbet seçenekleri"); }}><MoreHorizontal /></button></div>
       </header>
-      <div className={`chat-background ${chatTheme === "dark" ? "chat-theme-dark" : ""}`}>
+      <div ref={chatScroll} className={`chat-background ${chatTheme === "dark" ? "chat-theme-dark" : ""}`}>
         <div className="day-divider"><span>BUGÜN</span></div>
         {activeId && <div className="friend-note"><Check size={14} /> Bu kişiyle artık arkadaşsınız</div>}
         {!activeId && <div className="empty-chat"><div className="empty-chat-icon"><MessageCircle /></div><h2>{contacts.length ? "Sohbetini seç" : "Henüz hiç mesajın yok"}</h2><p>{contacts.length ? "Bir sohbet seç veya yeni bir konuşma başlat." : "İlk sohbetini başlatmak için bir kullanıcı ara."}</p>{!contacts.length && <button className="text-button" onClick={() => setModal("Kullanıcı ara")}>Kullanıcı ara <ArrowRight size={14} /></button>}</div>}
         {messages.map((item, index) => <div key={item.id || `${item.time}-${index}`} className={`message-line ${item.author === "me" ? "mine" : ""}`} onContextMenu={(event) => { if (!item.deletedForAll) { event.preventDefault(); setMessageMenu(item.id || null); } }} onPointerDown={(event) => { if (item.id && !item.deletedForAll) { pointerStart.current = { id: item.id, x: event.clientX }; holdTimer.current = window.setTimeout(() => setMessageMenu(item.id || null), 550); } }} onPointerUp={(event) => { if (holdTimer.current !== null) window.clearTimeout(holdTimer.current); holdTimer.current = null; const start = pointerStart.current; pointerStart.current = null; if (start && start.id === item.id && (item.author === "them" ? event.clientX - start.x > 55 : start.x - event.clientX > 55)) setReplyTarget(item); }}>
           {item.author !== "me" && <Avatar contact={activeContact} mini />}
-          <div className="bubble" onDoubleClick={() => { if (item.author === "me" && item.id && !item.deletedForAll) { setEditingMessage(item); setMessage(item.text); setReplyTarget(null); } }}><span>{item.replyTo && <small className="reply-reference">Yanıtlanan mesaj</small>}{item.attachmentUrl && (showPhotosDirectly ? <a href={item.attachmentUrl} target="_blank" rel="noreferrer"><img className="message-image" src={item.attachmentUrl} alt="Sohbette paylaşılan görsel" /></a> : <a className="hidden-photo-link" href={item.attachmentUrl} target="_blank" rel="noreferrer">Fotoğrafı aç</a>)}{item.text}{item.edited && <small className="edited-label"> · düzenlendi</small>}</span><div className="bubble-meta">{item.time}{item.author === "me" && <CheckCheck size={14} />}</div>{messageMenu === item.id && <div className="message-actions" onPointerDown={(event) => event.stopPropagation()}><button onClick={() => { setReplyTarget(item); setMessageMenu(null); }}>Yanıtla</button>{item.author === "me" && !item.deletedForAll && <button onClick={() => { setEditingMessage(item); setMessage(item.text); setMessageMenu(null); }}>Düzenle</button>}<button onClick={() => void deleteMessage(item, item.author === "me" && activeContact.kind !== "self")}>Benden sil</button>{item.author === "me" && activeContact.kind !== "self" && <button className="danger-action" onClick={() => void deleteMessage(item, true)}>Herkesten sil</button>}</div>}</div>
+          <div className="bubble" onDoubleClick={() => { if (item.author === "me" && item.id && !item.deletedForAll) { setEditingMessage(item); setMessage(item.text); setReplyTarget(null); } }}><span>{item.replyTo && <small className="reply-reference">Yanıtlanan mesaj</small>}{item.attachmentUrl && (showPhotosDirectly ? <a href={item.attachmentUrl} target="_blank" rel="noreferrer"><img className="message-image" src={item.attachmentUrl} alt="Sohbette paylaşılan görsel" /></a> : <a className="hidden-photo-link" href={item.attachmentUrl} target="_blank" rel="noreferrer">Fotoğrafı aç</a>)}{item.text}{item.edited && <small className="edited-label"> · düzenlendi</small>}</span><div className="bubble-meta">{item.time}{item.author === "me" && (item.read ? <CheckCheck size={14} aria-label="Okundu" /> : <Check size={14} aria-label="Gönderildi" />)}</div>{messageMenu === item.id && <div className="message-actions" onPointerDown={(event) => event.stopPropagation()}><button onClick={() => { setReplyTarget(item); setMessageMenu(null); }}>Yanıtla</button>{item.author === "me" && !item.deletedForAll && <button onClick={() => { setEditingMessage(item); setMessage(item.text); setMessageMenu(null); }}>Düzenle</button>}<button onClick={() => void deleteMessage(item, item.author === "me" && activeContact.kind !== "self")}>Benden sil</button>{item.author === "me" && activeContact.kind !== "self" && <button className="danger-action" onClick={() => void deleteMessage(item, true)}>Herkesten sil</button>}</div>}</div>
         </div>)}
       </div>
       <form className="composer" onSubmit={sendMessage}>
@@ -424,8 +444,8 @@ function App({ page }: { page: Page }) {
             setMessages((current) => [...current, { id: item.id, author: "me", text: "", attachmentUrl: item.attachment_url, time: new Date(item.created_at).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }) }]);
           } catch (reason) { notify(reason instanceof Error ? reason.message : "Fotoğraf gönderilemedi."); }
         }} /></label>
-        <input value={message} onChange={(event) => setMessage(event.target.value)} placeholder={editingMessage ? "Mesajı düzenle..." : "Bir mesaj yaz..."} aria-label="Mesajınız" />
-        <button className="send-button" type="submit" aria-label="Mesaj gönder" disabled={!activeId}><Send size={18} /></button>
+        <textarea ref={composerInput} rows={1} value={message} onChange={(event) => setMessage(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.form?.requestSubmit(); } }} placeholder={editingMessage ? "Mesajı düzenle..." : "Bir mesaj yaz..."} aria-label="Mesajınız" />
+        <button className="send-button" type="submit" aria-label="Mesaj gönder" disabled={!activeId || !message.trim()}><Send size={18} /></button>
       </form>
     </main>
     <nav className="mobile-nav">
@@ -442,7 +462,7 @@ function App({ page }: { page: Page }) {
 }
 
 function ContactRow({ contact, selected, onClick, onAction, onAccept, onReject }: { contact: Contact; selected: boolean; onClick: () => void; onAction: () => void; onAccept: () => void; onReject: () => void }) {
-  return <div className={`contact-row ${selected ? "selected" : ""}`} onClick={onClick} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter") onClick(); }}>
+  return <div className={`contact-row ${selected ? "selected" : ""}`} onClick={onClick} role="button" aria-pressed={selected} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onClick(); } }}>
     <Avatar contact={contact} />
     <div className="contact-copy"><div className="contact-title"><strong>{contact.name}</strong><time>{contact.time}</time></div><div className="contact-preview"><span>{contact.text}</span>{contact.unread && <b>{contact.unread}</b>}</div>
       {contact.request === "incoming" && <div className="request-actions" onClick={(event) => event.stopPropagation()}><button onClick={onAccept}>Kabul et</button><button onClick={onReject}>Reddet</button></div>}
